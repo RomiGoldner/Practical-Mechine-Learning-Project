@@ -1,0 +1,177 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Romi"
+date: "10/16/2020"
+output:
+  pdf_document: default
+  html_document: default
+keep_md: yes
+---
+
+# Intoduction
+
+In recent years using devices such as Jawbone Up, Nike FuelBand, and Fitbit has become more popular, and has made possible to collect more data. This data teaches us about the frequency of the movement one does. In this perticular project, our goal is to analyze the data from the accelerometers in belt, forearm, arm and dumbell form from 6 different participants. These participants will do the barbell lift exercise in 5 different ways. Out outcome will the the "classe" variable which will predict the manner in which they did the exercise. 
+
+# Getting, Cleaning and Exploring the Data
+
+## Preparing Environment 
+Before we start, its good practice to load all the libraries that will be necessary for the project. 
+We also want to set the seed so we get a reproducible report.
+```{r}
+library(knitr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(corrplot)
+set.seed(1221)
+```
+
+## Loading the Data
+First we need to load the training and testing data and look at their dimensions.
+Because the data is already split into two different files, we will not need to split in into training and
+testing sets.
+```{r}
+training <- read.csv("pml-training.csv")
+testing <- read.csv("pml-testing.csv")
+dim(training)
+dim(testing)
+```
+
+## Cleaining the Data
+After looking at the data we notice that there are a lot of NA's that need to be removed. 
+```{r}
+training_data <- training[, colSums(is.na(training))==0]
+testing_data <- testing[, colSums(is.na(testing))==0]
+dim(training_data)
+dim(testing_data)
+```
+
+Now we will remove the first 7 columns that don't help us much.
+```{r}
+training_data <- training_data[, -(1:7)]
+testing_data <- testing_data[, -(1:7)]
+dim(training_data)
+dim(testing_data)
+```
+
+Because we want to get the highest accuracy possible, we will want to split the training data into training and testing sets.
+This will allow us to test the models before the actual testing, and therefore receive the accuracy and choose the best model.
+```{r}
+inTrain <- createDataPartition(training_data$classe, p = 0.7, list = FALSE)
+trainSet <- training_data[inTrain, ]
+testSet <- training_data[-inTrain, ]
+dim(trainSet)
+dim(testSet)
+```
+
+We now will take the cleaning another level using the nearZeroVar function.
+```{r}
+NZV <- nearZeroVar(trainSet)
+trainData <- trainSet[, -NZV]
+testData  <- testSet[, -NZV]
+dim(trainData)
+dim(testData)
+```
+
+# General Analysis (correlation)
+At this point we cleaned the training and testing sets.
+Before we use different methods to model the training data, we will plot the correlation between the different variables. This will help us undersdant the relationships within the data. The darker the color - the more correlation.
+The correlations will be with all all but the classe variable (last column - 53) because that's our outcome variable.
+
+```{r}
+training_outcome <- trainData[,-53]
+correlation_Mat <- cor(training_outcome)
+corrplot(correlation_Mat, order = "FPC", method = "color", type = "lower", 
+         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+```
+
+## Prediction Models
+
+Now we want to build the model. There are different methods to do this, and here we will use 3 different methods and evaluate their accuracy. In the end we will see which is the most accurate. The three methods we will use are random forest, decision tree and boosting. 
+
+### Random Forest
+
+```{r}
+# Here we will use the cross validation method in the training control
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+# Build model
+modelFitRF <- train(classe~. , data = trainData, method = "rf", trControl = controlRF)
+modelFitRF
+```
+
+Now we will use the model on the testing data:
+
+```{r}
+predRF <- predict(modelFitRF, testData)
+cmRF <- confusionMatrix(factor(testData$classe), predRF)
+cmRF
+```
+```{r}
+# plot matrix
+plot(cmRF$table, col = cmRF$byClass, 
+     main = paste("Random Forest - Accuracy =", round(cmRF$overall['Accuracy'], 4)))
+```
+
+### Decision Tree
+
+```{r}
+# Build model
+modelFitDT <- rpart(classe~. , data = trainData, method = "class")
+modelFitDT
+```
+```{r}
+# Plot decision tree
+fancyRpartPlot(modelFitDT)
+```
+
+Now we will use the model on the testing data:
+```{r}
+predDT <- predict(modelFitDT, testData, type = "class")
+cmDT <- confusionMatrix(factor(testData$classe), predDT)
+cmDT
+```
+```{r}
+# plot matrix
+plot(cmDT$table, col = cmDT$byClass, 
+     main = paste("Decision Tree - Accuracy =", round(cmDT$overall['Accuracy'], 4)))
+```
+
+### Boosting
+
+```{r}
+# Here we will use the repeated cross validation method for the training control
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1, verboseIter = FALSE)
+#Build model
+modelFitGBM <- train(classe~. , data = trainData, method = "gbm", trControl = controlGBM)
+modelFitGBM
+```
+
+Now we will use the model on the testing data:
+```{r}
+predGBM <- predict(modelFitGBM, testData)
+cmGBM <- confusionMatrix(factor(testData$classe), predGBM)
+cmGBM
+```
+```{r}
+# plot matrix
+plot(cmGBM$table, col = cmGBM$byClass, 
+     main = paste("Boosting - Accuracy =", round(cmGBM$overall['Accuracy'], 4)))
+```
+# Apply models to testing set
+
+We built three different models from three different methods. 
+Each method got a different accuracy:
+ - Random Forest: 0.9915
+ - Decision Tree: 0.7477
+ - Boosting: 0.9624
+ 
+We will take the model that got the highest accuracy: Random Forest.
+Apply on the testing set:
+
+```{r}
+predTEST <- predict(modelFitRF, testing)
+predTEST
+```
+
